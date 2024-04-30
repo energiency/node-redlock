@@ -2,7 +2,7 @@ name: Build
 on: [push]
 jobs:
   test:
-    name: Build & Test
+    name: Test
     runs-on: "ubuntu-latest"
     steps:
       - uses: actions/checkout@v4
@@ -43,4 +43,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm run semantic-release
+        run: npm run release
