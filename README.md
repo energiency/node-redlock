@@ -15,7 +15,7 @@ This is a node.js implementation of the [redlock](http://redis.io/topics/distloc
 ## Installation
 
 ```bash
-npm install --save redlock
+npm install --save @energiency/redlock
 ```
 
 ## Configuration
