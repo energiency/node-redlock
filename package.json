@@ -71,9 +71,6 @@
     "prepublishOnly": "yarn install && yarn lint && yarn build",
     "release": "semantic-release"
   },
-  "dependencies": {
-    "node-abort-controller": "^3.0.1"
-  },
   "release": {
     "branches": [
       "+([0-9])?(.{+([0-9]),x}).x",
