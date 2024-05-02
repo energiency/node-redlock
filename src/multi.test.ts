@@ -47,7 +47,7 @@ function run(
       [redisA, redisB, redisC].map(async (redis) => {
         redis.connect();
 
-        if (redis.flushDb) {
+        if ("flushDb" in redis) {
           await (redis as RedisClientType).flushDb();
         } else {
           const cluster = redis as RedisClusterType;
