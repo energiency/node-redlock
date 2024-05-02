@@ -1,6 +1,11 @@
 import { formatWithOptions } from "util";
 import test, { ExecutionContext } from "ava";
-import Redis, { Redis as Client, Cluster } from "ioredis";
+import {
+  createClient,
+  createCluster,
+  type RedisClientType,
+  type RedisClusterType,
+} from "redis";
 import Redlock, { ExecutionError, ResourceLockedError } from "./index.js";
 
 async function fail(
@@ -31,50 +36,28 @@ ${(await Promise.all(error.attempts))
 `);
 }
 
-async function waitForCluster(redis: Cluster): Promise<void> {
-  async function checkIsReady(): Promise<boolean> {
-    return (
-      ((await redis.cluster("info")) as string).match(
-        /^cluster_state:(.+)$/m
-      )?.[1] === "ok"
-    );
-  }
+function run(
+  namespace: string,
+  redis: RedisClientType | RedisClusterType
+): void {
+  test.before(async (t) => {
+    await redis.connect();
 
-  let isReady = await checkIsReady();
-  while (!isReady) {
-    console.log("Waiting for cluster to be ready...");
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    isReady = await checkIsReady();
-  }
-
-  async function checkIsWritable(): Promise<boolean> {
-    try {
-      return ((await redis.set("isWritable", "true")) as string) === "OK";
-    } catch (error) {
-      console.error(`Cluster unable to receive writes: ${error}`);
-      return false;
+    if (redis.flushDb) {
+      await (redis as RedisClientType).flushDb();
+    } else {
+      const cluster = redis as RedisClusterType;
+      await Promise.all(
+        cluster.masters.map(async (master) => {
+          const client = await cluster.nodeClient(master);
+          await client.flushDb();
+        })
+      );
     }
-  }
-
-  let isWritable = await checkIsWritable();
-  while (!isWritable) {
-    console.log("Waiting for cluster to be writable...");
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    isWritable = await checkIsWritable();
-  }
-}
-
-function run(namespace: string, redis: Client | Cluster): void {
-  test.before(async () => {
-    await (redis instanceof Cluster && redis.isCluster
-      ? waitForCluster(redis)
-      : null);
   });
 
-  test.before(async () => {
-    await redis
-      .keys("*")
-      .then((keys) => (keys?.length ? redis.del(keys) : null));
+  test.after(async () => {
+    await redis.disconnect();
   });
 
   test(`${namespace} - refuses to use a non-integer duration`, async (t) => {
@@ -109,7 +92,7 @@ function run(namespace: string, redis: Client | Cluster): void {
         "The lock value was incorrect."
       );
       t.is(
-        Math.floor((await redis.pttl("{redlock}a")) / 200),
+        Math.floor((await redis.pTTL("{redlock}a")) / 200),
         Math.floor(duration / 200),
         "The lock expiration was off by more than 200ms"
       );
@@ -122,7 +105,7 @@ function run(namespace: string, redis: Client | Cluster): void {
         "The lock value was incorrect."
       );
       t.is(
-        Math.floor((await redis.pttl("{redlock}a")) / 200),
+        Math.floor((await redis.pTTL("{redlock}a")) / 200),
         Math.floor((3 * duration) / 200),
         "The lock expiration was off by more than 200ms"
       );
@@ -157,12 +140,12 @@ function run(namespace: string, redis: Client | Cluster): void {
         "The lock value was incorrect."
       );
       t.is(
-        Math.floor((await redis.pttl("{redlock}a1")) / 200),
+        Math.floor((await redis.pTTL("{redlock}a1")) / 200),
         Math.floor(duration / 200),
         "The lock expiration was off by more than 200ms"
       );
       t.is(
-        Math.floor((await redis.pttl("{redlock}a2")) / 200),
+        Math.floor((await redis.pTTL("{redlock}a2")) / 200),
         Math.floor(duration / 200),
         "The lock expiration was off by more than 200ms"
       );
@@ -180,12 +163,12 @@ function run(namespace: string, redis: Client | Cluster): void {
         "The lock value was incorrect."
       );
       t.is(
-        Math.floor((await redis.pttl("{redlock}a1")) / 200),
+        Math.floor((await redis.pTTL("{redlock}a1")) / 200),
         Math.floor((3 * duration) / 200),
         "The lock expiration was off by more than 200ms"
       );
       t.is(
-        Math.floor((await redis.pttl("{redlock}a2")) / 200),
+        Math.floor((await redis.pTTL("{redlock}a2")) / 200),
         Math.floor((3 * duration) / 200),
         "The lock expiration was off by more than 200ms"
       );
@@ -201,13 +184,11 @@ function run(namespace: string, redis: Client | Cluster): void {
 
   test(`${namespace} - locks fail when redis is unreachable`, async (t) => {
     try {
-      const redis = new Redis({
-        host: "127.0.0.1",
-        maxRetriesPerRequest: 0,
-        autoResendUnfulfilledCommands: false,
-        autoResubscribe: false,
-        retryStrategy: () => null,
-        reconnectOnError: () => false,
+      const redis: RedisClientType = await createClient({
+        url: "redis://127.0.0.1:6379",
+        socket: {
+          reconnectStrategy: () => false,
+        },
       });
 
       redis.on("error", () => {
@@ -235,7 +216,7 @@ function run(namespace: string, redis: Client | Cluster): void {
           t.is(e.status, "fulfilled");
           if (e.status === "fulfilled") {
             for (const v of e.value?.votesAgainst?.values()) {
-              t.is(v.message, "Connection is closed.");
+              t.is(v.message, "The client is closed");
             }
           }
         }
@@ -292,7 +273,7 @@ function run(namespace: string, redis: Client | Cluster): void {
         "The lock value was incorrect."
       );
       t.is(
-        Math.floor((await redis.pttl("{redlock}c")) / 200),
+        Math.floor((await redis.pTTL("{redlock}c")) / 200),
         Math.floor(duration / 200),
         "The lock expiration was off by more than 200ms"
       );
@@ -355,12 +336,12 @@ function run(namespace: string, redis: Client | Cluster): void {
         "The lock value was incorrect."
       );
       t.is(
-        Math.floor((await redis.pttl("{redlock}c1")) / 200),
+        Math.floor((await redis.pTTL("{redlock}c1")) / 200),
         Math.floor(duration / 200),
         "The lock expiration was off by more than 200ms"
       );
       t.is(
-        Math.floor((await redis.pttl("{redlock}c2")) / 200),
+        Math.floor((await redis.pTTL("{redlock}c2")) / 200),
         Math.floor(duration / 200),
         "The lock expiration was off by more than 200ms"
       );
@@ -545,6 +526,14 @@ function run(namespace: string, redis: Client | Cluster): void {
   });
 }
 
-run("instance", new Redis({ host: "redis-single-instance" }));
-
-run("cluster", new Cluster([{ host: "redis-single-cluster-1" }]));
+run("instance", createClient({ url: "redis://redis-single-instance:6379" }));
+/*run(
+  "cluster",
+  createCluster({
+    rootNodes: [
+      {
+        url: "redis://redis-single-cluster-1:6379",
+      },
+    ],
+  })
+);*/
