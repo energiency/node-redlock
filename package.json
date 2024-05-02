@@ -96,5 +96,8 @@
       "@semantic-release/github"
     ]
   },
-  "type": "module"
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  }
 }
