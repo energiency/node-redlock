@@ -1,6 +1,6 @@
 {
   "name": "@energiency/redlock",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A node.js redlock implementation for distributed redis locks",
   "license": "MIT",
   "author": {
